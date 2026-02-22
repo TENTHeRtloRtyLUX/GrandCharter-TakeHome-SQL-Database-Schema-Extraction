@@ -32,6 +32,12 @@ function normalizeColumns(value: unknown): string[] {
   return value.filter((v): v is string => typeof v === "string");
 }
 
+function lowercaseMap<T>(arr: T[], key: (v: T) => string): Map<string, T> {
+  const m = new Map<string, T>();
+  for (const item of arr) m.set(key(item).toLowerCase(), item);
+  return m;
+}
+
 function classifyRelationship(
   fromColumns: string[],
   tableUniques: { name: string; columns: string[] }[],
@@ -50,13 +56,48 @@ export function mapInterfaces(
 ): { interfacesMapped: InterfaceDef[]; warnings: WarningDef[] } {
   const warnings: WarningDef[] = [];
   const interfacesMapped: InterfaceDef[] = interfaces.map((iface) => {
-    const match = tables.find(
-      (t) => t.name.toLowerCase() === iface.name.toLowerCase()
-    );
+    const match = tables.find((t) => t.name.toLowerCase() === iface.name.toLowerCase());
     if (match) {
+      // field-level diff
+      const tableCols = lowercaseMap(match.columns, (c) => c.name);
+      const missingInTable: string[] = [];
+      const extraInTable: string[] = [];
+      const nullableMismatches: string[] = [];
+      const typeMismatches: string[] = [];
+
+      for (const f of iface.fields) {
+        const col = tableCols.get(f.name.toLowerCase());
+        if (!col) {
+          missingInTable.push(f.name);
+        } else {
+          if (col.nullable !== f.nullable) nullableMismatches.push(f.name);
+          if (col.type.toLowerCase() !== f.type.toLowerCase()) typeMismatches.push(f.name);
+          tableCols.delete(f.name.toLowerCase());
+        }
+      }
+      extraInTable.push(...Array.from(tableCols.keys()));
+
+      if (missingInTable.length || extraInTable.length || nullableMismatches.length || typeMismatches.length) {
+        warnings.push({
+          type: "interface_field_mismatch",
+          message: `Interface ${iface.name} differs from table ${match.schema}.${match.name}`,
+          source: iface.source,
+        });
+      }
+
       return {
         ...iface,
-        mappedTo: { table: match.name, schema: match.schema, confidence: 0.9 },
+        mappedTo: {
+          table: match.name,
+          schema: match.schema,
+          confidence: 0.9,
+          fieldDiff: {
+            missingInTable,
+            extraInTable,
+            nullableMismatches,
+            typeMismatches,
+          },
+        },
       };
     }
     warnings.push({
@@ -101,6 +142,9 @@ export async function extractSchema(
   await client.connect();
 
   try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL default_transaction_read_only = on");
+
     const versionRes = await client.query("SHOW server_version");
     const version = versionRes.rows[0]?.server_version ?? null;
 
@@ -114,6 +158,32 @@ export async function extractSchema(
       `,
       [includeSchemas]
     );
+
+    const tableMetaRes = await client.query(
+      `
+      SELECT n.nspname AS table_schema,
+             c.relname AS table_name,
+             obj_description(c.oid) AS comment,
+             c.reltuples::bigint AS row_estimate
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE c.relkind = 'r'
+        AND n.nspname = ANY($1)
+      ORDER BY n.nspname, c.relname;
+      `,
+      [includeSchemas]
+    );
+    const tableMetaMap = new Map<
+      string,
+      { comment: string | null; rowEstimate: number | null }
+    >();
+    for (const row of tableMetaRes.rows) {
+      tableMetaMap.set(`${row.table_schema}.${row.table_name}`, {
+        comment: row.comment ?? null,
+        rowEstimate:
+          typeof row.row_estimate === "number" ? row.row_estimate : null,
+      });
+    }
 
     const tableRows = tablesRes.rows.filter(
       (row) => !excludeTables.includes(row.table_name)
@@ -240,15 +310,20 @@ export async function extractSchema(
     const tablesMap = new Map<string, PgTable>();
     for (const row of tableRows) {
       const key = `${row.table_schema}.${row.table_name}`;
+      const meta = tableMetaMap.get(key) || {
+        comment: null,
+        rowEstimate: null,
+      };
       tablesMap.set(key, {
         name: row.table_name,
         schema: row.table_schema,
-        comment: null,
+        comment: meta.comment,
         columns: [],
         primaryKey: null,
         uniques: [],
         checks: [],
         foreignKeys: [],
+        rowEstimate: meta.rowEstimate,
       });
     }
 
@@ -396,7 +471,11 @@ export async function extractSchema(
       warnings,
     };
 
+    await client.query("COMMIT");
     return schemaExport;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
   } finally {
     await client.end();
   }

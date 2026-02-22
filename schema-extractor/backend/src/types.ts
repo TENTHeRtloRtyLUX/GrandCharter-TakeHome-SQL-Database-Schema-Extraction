@@ -56,6 +56,7 @@ export type PgTable = {
   name: string;
   schema: string;
   comment: string | null;
+  rowEstimate?: number | null;
   columns: PgColumn[];
   primaryKey: { name: string; columns: string[] } | null;
   uniques: { name: string; columns: string[] }[];
@@ -93,7 +94,17 @@ export type InterfaceDef = {
   name: string;
   source: string;
   fields: { name: string; type: string; nullable: boolean }[];
-  mappedTo: { table: string; schema: string; confidence: number } | null;
+  mappedTo: {
+    table: string;
+    schema: string;
+    confidence: number;
+    fieldDiff?: {
+      missingInTable: string[];
+      extraInTable: string[];
+      nullableMismatches: string[];
+      typeMismatches: string[];
+    };
+  } | null;
 };
 
 export type WarningDef = {

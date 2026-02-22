@@ -55,3 +55,47 @@ export async function scanInterfacesZip(file: File): Promise<{
   }
   return res.json();
 }
+
+export async function listSnapshots(): Promise<{
+  snapshots: { id: string; meta: any; counts: any }[];
+}> {
+  const res = await fetch(`${API_URL}/snapshots`);
+  if (!res.ok) throw new Error("Failed to list snapshots");
+  return res.json();
+}
+
+export async function loadSnapshot(id: string): Promise<unknown> {
+  const res = await fetch(`${API_URL}/snapshots/${id}`);
+  if (!res.ok) throw new Error("Snapshot not found");
+  return res.json();
+}
+
+export async function deleteSnapshot(id: string): Promise<boolean> {
+  const res = await fetch(`${API_URL}/snapshots/${id}`, { method: "DELETE" });
+  if (!res.ok) return false;
+  const data = await res.json();
+  return data.deleted;
+}
+
+export async function textToSql(payload: {
+  connectionString: string;
+  sql: string;
+  allowInsecureSSL?: boolean;
+  limit?: number;
+}): Promise<{
+  rows?: unknown[];
+  rowCount?: number;
+  fields?: { name: string; dataTypeID: number }[];
+  error?: string;
+}> {
+  const res = await fetch(`${API_URL}/text-to-sql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error || "Text-to-SQL failed");
+  }
+  return data;
+}
