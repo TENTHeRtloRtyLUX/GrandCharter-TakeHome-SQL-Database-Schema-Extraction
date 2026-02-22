@@ -23,6 +23,8 @@ export function diffSchemas(a: SchemaExport, b: SchemaExport) {
   const addedTables: string[] = [];
   const removedTables: string[] = [];
   const changedTables: string[] = [];
+  const columnChanges: { table: string; added: string[]; removed: string[]; changed: string[] }[] = [];
+  const breakingChanges: string[] = [];
 
   for (const k of tablesA.keys()) if (!tablesB.has(k)) removedTables.push(k);
   for (const k of tablesB.keys()) if (!tablesA.has(k)) addedTables.push(k);
@@ -32,11 +34,13 @@ export function diffSchemas(a: SchemaExport, b: SchemaExport) {
     if (!ta) continue;
     const colA = new Map(ta.columns.map((c) => [c.name, c]));
     const colB = new Map(tb.columns.map((c) => [c.name, c]));
+    const addedCols: string[] = [];
+    const removedCols: string[] = [];
     const changedCols: string[] = [];
     for (const [name, cb] of colB.entries()) {
       const ca = colA.get(name);
       if (!ca) {
-        changedCols.push(name);
+        addedCols.push(name);
         continue;
       }
       if (
@@ -45,10 +49,31 @@ export function diffSchemas(a: SchemaExport, b: SchemaExport) {
         (ca.default || "") !== (cb.default || "")
       ) {
         changedCols.push(name);
+        if (!cb.nullable && ca.nullable) {
+          breakingChanges.push(`Column ${k}.${name} changed to NOT NULL`);
+        }
+        if (ca.type !== cb.type) {
+          breakingChanges.push(`Column ${k}.${name} type changed from ${ca.type} to ${cb.type}`);
+        }
       }
     }
-    for (const name of colA.keys()) if (!colB.has(name)) changedCols.push(name);
-    if (changedCols.length) changedTables.push(`${k} (${Array.from(new Set(changedCols)).join(",")})`);
+    for (const name of colA.keys()) {
+      if (!colB.has(name)) {
+        removedCols.push(name);
+        breakingChanges.push(`Column ${k}.${name} was removed`);
+      }
+    }
+    if (addedCols.length || removedCols.length || changedCols.length) {
+      columnChanges.push({
+        table: k,
+        added: addedCols,
+        removed: removedCols,
+        changed: changedCols,
+      });
+    }
+    if (changedCols.length || removedCols.length || addedCols.length) {
+      changedTables.push(`${k} (${Array.from(new Set([...addedCols, ...removedCols, ...changedCols])).join(",")})`);
+    }
   }
 
   const enumsA = new Map(a.enums.map((e) => [keyEnum(e), e]));
@@ -72,10 +97,11 @@ export function diffSchemas(a: SchemaExport, b: SchemaExport) {
   const removedInterfaces = Array.from(interfacesA.keys()).filter((k) => !interfacesB.has(k));
 
   return {
-    tables: { added: addedTables, removed: removedTables, changed: changedTables },
+    tables: { added: addedTables, removed: removedTables, changed: changedTables, columnChanges },
     enums: { added: addedEnums, removed: removedEnums },
     indexes: { added: addedIdx, removed: removedIdx },
     relationships: { added: addedRel, removed: removedRel },
     interfaces: { added: addedInterfaces, removed: removedInterfaces },
+    breaking: breakingChanges,
   };
 }

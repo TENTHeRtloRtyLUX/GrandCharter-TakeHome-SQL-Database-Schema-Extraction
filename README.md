@@ -1,6 +1,6 @@
 ﻿# Schema Extractor
 
-Backend + frontend to extract database schema (Postgres + MySQL/MariaDB), relationships, enums, indexes, snapshots, diffs, and interface mappings with field-level checks. Includes a read‑only Text-to-SQL runner.
+Backend + frontend to extract database schema (Postgres + MySQL/MariaDB), relationships, enums, indexes, snapshots, diffs (with breaking-change flags), and interface mappings with field-level checks. Includes a read‑only Text-to-SQL runner.
 
 ## Demo Links
 - Demo: Local (run frontend and backend locally).
@@ -91,7 +91,7 @@ Fetch a snapshot.
 Delete a snapshot and persist the change.
 
 ### GET /snapshots/:id/diff/:otherId
-Return structural diffs (added/removed/changed tables, indexes, enums, relationships, interfaces) between two snapshots.
+Return structural diffs (added/removed/changed tables, indexes, enums, relationships, interfaces) plus column-level changes and breaking-change notes between two snapshots.
 
 ### POST /text-to-sql
 Run a *single* read-only SELECT/WITH query. The backend blocks DML/DDL, enforces read-only transaction, and applies a LIMIT (default 100, max 1000). Payload:

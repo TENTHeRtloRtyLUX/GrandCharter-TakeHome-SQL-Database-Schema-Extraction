@@ -961,18 +961,40 @@ export default function App() {
             Import Interfaces
           </button>
           {diffResult && (
-            <div className="warnings" style={{ marginTop: 12 }}>
-              <div className="muted small">Diff (from {snapshotId} to {diffTarget}):</div>
-              <div className="list">
-                {renderDiffGroup("Tables", diffResult.tables)}
-                {renderDiffGroup("Indexes", diffResult.indexes)}
-                {renderDiffGroup("Enums", diffResult.enums)}
-                {renderDiffGroup("Relationships", diffResult.relationships)}
-                {renderDiffGroup("Interfaces", diffResult.interfaces)}
+              <div className="warnings" style={{ marginTop: 12 }}>
+                <div className="muted small">Diff (from {snapshotId} to {diffTarget}):</div>
+                <div className="list">
+                  {renderDiffGroup("Tables", diffResult.tables)}
+                  {diffResult.tables?.columnChanges?.length ? (
+                    <div className="list-row column">
+                      <div className="mono">Column changes</div>
+                      <div className="diff">
+                        {diffResult.tables.columnChanges.map((c: any) => (
+                          <div key={c.table} className="muted small">
+                            <strong>{c.table}</strong> — added: {c.added.length} · removed: {c.removed.length} · changed: {c.changed.length}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {renderDiffGroup("Indexes", diffResult.indexes)}
+                  {renderDiffGroup("Enums", diffResult.enums)}
+                  {renderDiffGroup("Relationships", diffResult.relationships)}
+                  {renderDiffGroup("Interfaces", diffResult.interfaces)}
+                  {diffResult.breaking && diffResult.breaking.length > 0 && (
+                    <div className="list-row column">
+                      <div className="mono">Breaking changes</div>
+                      <div className="diff">
+                        {diffResult.breaking.map((b: string, i: number) => (
+                          <div key={i} className="muted small">- {b}</div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <pre className="json">{JSON.stringify(diffResult, null, 2)}</pre>
               </div>
-              <pre className="json">{JSON.stringify(diffResult, null, 2)}</pre>
-            </div>
-          )}
+            )}
         </div>
         <div>
           <div className="panel-header">
