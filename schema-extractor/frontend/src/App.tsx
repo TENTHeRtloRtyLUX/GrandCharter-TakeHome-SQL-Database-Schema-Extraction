@@ -15,8 +15,10 @@ import {
   scanInterfacesZip,
   textToSql,
   listSnapshots,
+  saveSnapshot,
   loadSnapshot,
   deleteSnapshot,
+  listDatabases,
 } from "./api";
 import dagre from "dagre";
 
@@ -220,8 +222,7 @@ function TableDetail({ table }: { table: PgTable }) {
 
 export default function App() {
   const [connectionString, setConnectionString] = useState("");
-  const [schema, setSchema] = useState("public");
-  const [includeSchemas, setIncludeSchemas] = useState("public");
+  const [schema, setSchema] = useState("");
   const [excludeTables, setExcludeTables] = useState("");
   const [allowInsecureSSL, setAllowInsecureSSL] = useState(true);
   const [interfacesJson, setInterfacesJson] = useState("[]");
@@ -250,6 +251,10 @@ export default function App() {
   const [textFields, setTextFields] = useState<{ name: string; dataTypeID?: number }[] | null>(null);
   const [diffResult, setDiffResult] = useState<any | null>(null);
   const [diffTarget, setDiffTarget] = useState<string>("");
+  const [dbList, setDbList] = useState<string[]>([]);
+  const [dbListLoading, setDbListLoading] = useState(false);
+  const [selectedDb, setSelectedDb] = useState("");
+  const hasDbList = dbList.length > 0;
 
   const stats = useMemo(() => {
     if (!result) return null;
@@ -281,6 +286,16 @@ export default function App() {
     refreshSnapshots(true);
   }, []);
 
+  useEffect(() => {
+    try {
+      const url = new URL(connectionString);
+      const db = url.pathname.replace("/", "");
+      setSelectedDb(db);
+    } catch {
+      setSelectedDb("");
+    }
+  }, [connectionString]);
+
   async function runDiff(targetId: string) {
     if (!snapshotId || !targetId) return;
     try {
@@ -303,6 +318,23 @@ export default function App() {
       setSnapshotList(res.snapshots || []);
     } catch (err) {
       if (!silent) toast.error("Failed to load snapshots");
+    }
+  }
+
+  async function loadDatabases() {
+    if (!connectionString) return toast.error("Enter a connection string");
+    setDbListLoading(true);
+    try {
+      const res = await listDatabases({
+        connectionString,
+        allowInsecureSSL,
+      });
+      setDbList(res.databases || []);
+      toast.success("Databases loaded");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to list databases");
+    } finally {
+      setDbListLoading(false);
     }
   }
 
@@ -403,9 +435,11 @@ export default function App() {
 
     const laidOut = allNodes.map((n) => {
       const nodeWithPos = g.node(n.id);
+      const x = Number.isFinite(nodeWithPos?.x) ? nodeWithPos.x : 0;
+      const y = Number.isFinite(nodeWithPos?.y) ? nodeWithPos.y : 0;
       return {
         ...n,
-        position: { x: nodeWithPos.x, y: nodeWithPos.y },
+        position: { x, y },
       };
     });
 
@@ -457,19 +491,15 @@ export default function App() {
   async function onExtract() {
     setLoading(true);
     try {
-      const payload = {
-        connectionString,
-        schema,
-        includeSchemas: includeSchemas
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
-        excludeTables: excludeTables
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
-        allowInsecureSSL,
-      };
+        const payload = {
+          connectionString,
+          schema: schema.trim() || undefined,
+          excludeTables: excludeTables
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
+          allowInsecureSSL,
+        };
       const res = await extractSchema(payload);
       setSnapshotId(res.snapshotId);
       setSelectedSnapshotId(res.snapshotId);
@@ -479,7 +509,6 @@ export default function App() {
         setSelectedTable(`${schemaResult.tables[0].schema}.${schemaResult.tables[0].name}`);
       }
       toast.success("Schema extracted");
-      refreshSnapshots(true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Extraction failed");
     } finally {
@@ -604,6 +633,24 @@ export default function App() {
                 Delete snapshot
               </button>
             )}
+            {result && (
+              <button
+                className="ghost small"
+                onClick={async () => {
+                  try {
+                    const res = await saveSnapshot(result);
+                    setSnapshotId(res.snapshotId);
+                    setSelectedSnapshotId(res.snapshotId);
+                    await refreshSnapshots(true);
+                    toast.success("Snapshot saved");
+                  } catch {
+                    toast.error("Failed to save snapshot");
+                  }
+                }}
+              >
+                Save snapshot now
+              </button>
+            )}
           </div>
         </div>
         <div className="hero-card">
@@ -616,42 +663,71 @@ export default function App() {
             />
           </label>
           <div className="row">
-            <label>
-              Default Schema
-              <input
-                value={schema}
-                onChange={(e) => setSchema(e.target.value)}
-                placeholder="public"
-              />
-            </label>
-            <label>
-              Include Schemas (comma)
-              <input
-                value={includeSchemas}
-                onChange={(e) => setIncludeSchemas(e.target.value)}
-                placeholder="public, billing"
-              />
-            </label>
+            <button className="ghost" type="button" disabled={dbListLoading} onClick={loadDatabases}>
+              {dbListLoading ? "Loading DBs..." : "List Databases"}
+            </button>
+            {dbList.length > 0 && (
+              <select
+                className="inline-input"
+                value={selectedDb || ""}
+                onChange={(e) => {
+                  const db = e.target.value;
+                  if (!db) return;
+                  try {
+                    const url = new URL(connectionString);
+                    url.pathname = `/${db}`;
+                    setConnectionString(url.toString());
+                    setSelectedDb(db);
+                  } catch {
+                    toast.error("Invalid connection string");
+                  }
+                }}
+              >
+                {!selectedDb && <option value="">Select database</option>}
+                {selectedDb && <option value={selectedDb}>{selectedDb} (current)</option>}
+                {dbList
+                  .filter((db) => db !== selectedDb)
+                  .map((db) => (
+                  <option key={db} value={db}>
+                    {db}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
-          <label>
-            Exclude Tables (comma)
-            <input
-              value={excludeTables}
-              onChange={(e) => setExcludeTables(e.target.value)}
-              placeholder="audit_log, temp_*"
-            />
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={allowInsecureSSL}
-              onChange={(e) => setAllowInsecureSSL(e.target.checked)}
-            />
-            Allow self-signed SSL certificates
-          </label>
-          <button disabled={loading} onClick={onExtract}>
-            {loading ? "Extracting..." : "Extract Schema"}
-          </button>
+          {hasDbList && (
+            <>
+              <div className="row">
+                <label>
+                  Default Schema (optional)
+                  <input
+                    value={schema}
+                    onChange={(e) => setSchema(e.target.value)}
+                    placeholder="public"
+                  />
+                </label>
+              </div>
+              <label>
+                Exclude Tables (comma)
+                <input
+                  value={excludeTables}
+                  onChange={(e) => setExcludeTables(e.target.value)}
+                  placeholder="audit_log, temp_*"
+                />
+              </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={allowInsecureSSL}
+                  onChange={(e) => setAllowInsecureSSL(e.target.checked)}
+                />
+                Allow self-signed SSL certificates
+              </label>
+              <button disabled={loading} onClick={onExtract}>
+                {loading ? "Extracting..." : "Extract Schema"}
+              </button>
+            </>
+          )}
         </div>
       </header>
 
@@ -671,7 +747,7 @@ export default function App() {
               <div>Indexes: {stats.indexes}</div>
               <div>Interfaces: {stats.interfaces}</div>
               <div className="muted small">
-                {stats.interfacesUnmapped} unmapped · {stats.interfacesMismatched} mismatched
+                Unmapped: {stats.interfacesUnmapped} | Mismatched: {stats.interfacesMismatched}
               </div>
             </div>
           )}
@@ -780,7 +856,7 @@ export default function App() {
         </section>
       )}
 
-      {result && result.relationships && result.relationships.length > 0 && (
+      {result && (
         <section className="panel">
           <div className="panel-header">
             <h2>Relationships</h2>
@@ -823,20 +899,25 @@ export default function App() {
               </label>
             </div>
           </div>
-          <div style={{ height: 360, border: "1px solid #e0d6c7", borderRadius: 12 }}>
-            <ReactFlow
-              nodes={graphData.nodes}
-              edges={graphData.edges}
-              fitView
-              fitViewOptions={{ padding: 0.2 }}
-              proOptions={{ hideAttribution: true }}
-              onInit={(inst) => setFlowInstance(inst)}
-            >
-              <MiniMap />
-              <Controls />
-              <Background gap={12} color="#f0e6d8" />
-            </ReactFlow>
-          </div>
+          {result.relationships && result.relationships.length > 0 ? (
+            <div style={{ height: 360, border: "1px solid #e0d6c7", borderRadius: 12, background: "#0f1116" }}>
+              <ReactFlow
+                nodes={graphData.nodes}
+                edges={graphData.edges}
+                fitView
+                fitViewOptions={{ padding: 0.2 }}
+                proOptions={{ hideAttribution: true }}
+                onInit={(inst) => setFlowInstance(inst)}
+                style={{ width: "100%", height: "100%" }}
+              >
+                <MiniMap />
+                <Controls />
+                <Background gap={12} color="#f0e6d8" />
+              </ReactFlow>
+            </div>
+          ) : (
+            <div className="muted small">No relationships found in this extraction.</div>
+          )}
         </section>
       )}
 
@@ -865,21 +946,21 @@ export default function App() {
       {result && Array.isArray(result.indexes) && result.indexes.length > 0 && (
         <section className="panel">
           <h2>Indexes</h2>
-          <div className="list">
+          <div className="indexes-grid">
             {schemas.map((schemaName) => {
               const tableEntries = Array.from(indexesByTable.entries()).filter(([k]) =>
                 k.startsWith(`${schemaName}.`)
               );
               if (tableEntries.length === 0) return null;
               return (
-                <div key={schemaName} className="list-row column schema-block">
+                <div key={schemaName} className="indexes-card">
                   <div className="group-header">
                     <div className="title-block">
                       <div className="mono">{schemaName}</div>
                       <div className="meta">{tableEntries.length} table(s)</div>
                     </div>
                   </div>
-                  <div className="list nested">
+                  <div className="list nested compact">
                     {tableEntries.map(([key, items]) => {
                       const isOpen = openIndexGroups.has(key);
                       const [, tableName] = key.split(".");
@@ -944,10 +1025,16 @@ export default function App() {
           </p>
           <div className="upload">
             <input
+              id="interface-zip"
+              className="file-input"
               type="file"
               accept=".zip"
               onChange={(e) => setZipFile(e.target.files?.[0] || null)}
             />
+            <label className="file-label" htmlFor="interface-zip">
+              <span className="file-button">Choose File</span>
+              <span className="file-name">{zipFile ? zipFile.name : "No file chosen"}</span>
+            </label>
             <button disabled={loading || !zipFile} onClick={onScanZip}>
               Scan Zip
             </button>

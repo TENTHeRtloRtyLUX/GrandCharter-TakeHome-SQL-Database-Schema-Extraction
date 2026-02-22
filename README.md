@@ -84,6 +84,9 @@ Upload a `.zip` of your codebase to extract TypeScript interfaces/types.
 ### GET /snapshots
 List saved snapshots (persisted to `backend/src/snapshots.json`).
 
+### POST /snapshots/save
+Save the current extraction result as a snapshot. This is user‑initiated from the UI (no automatic snapshotting on extract).
+
 ### GET /snapshots/:id
 Fetch a snapshot.
 
@@ -120,6 +123,7 @@ Key UI features:
 - Interfaces: upload zip or paste JSON; view mapped/unmapped/mismatched with field-level diffs; filter by status.
 - Snapshots: load/delete saved runs, compute diffs against another snapshot, view diff summary + raw JSON.
 - Text-to-SQL: client-side lint against DML, run read-only query with row limit; results shown in table.
+- Indexes: responsive grid layout with wrapping and overflow-safe labels.
 
 ## Prerequisites
 
@@ -128,7 +132,7 @@ Key UI features:
 
 ## Notes
 
-- Snapshots persist to `backend/src/snapshots.json`.
+- Snapshots persist to `backend/src/snapshots.json` and are only saved when explicitly requested via the UI.
 - Text-to-SQL executes user-entered read-only SQL (no LLM); mutations and multiple statements are blocked server-side.
 - Interface mapping is name-based with field-level diff (missing/extra/type/nullability).
 

@@ -117,7 +117,9 @@ export async function extractSchema(
   const includeSchemas =
     request.includeSchemas && request.includeSchemas.length > 0
       ? request.includeSchemas
-      : [request.schema || DEFAULT_SCHEMA];
+      : request.schema
+      ? [request.schema]
+      : await getAllSchemas(request);
   const excludeTables = request.excludeTables || [];
 
   const allowInsecure =
@@ -476,6 +478,37 @@ export async function extractSchema(
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;
+  } finally {
+    await client.end();
+  }
+}
+
+async function getAllSchemas(request: ExtractRequest): Promise<string[]> {
+  const allowInsecure =
+    request.allowInsecureSSL || process.env.ALLOW_INSECURE_SSL === "true";
+  const connectionString = (() => {
+    if (!allowInsecure) return request.connectionString;
+    try {
+      const url = new URL(request.connectionString);
+      url.searchParams.delete("sslmode");
+      url.searchParams.delete("sslrootcert");
+      url.searchParams.delete("sslcert");
+      url.searchParams.delete("sslkey");
+      return url.toString();
+    } catch {
+      return request.connectionString;
+    }
+  })();
+  const client = new Client({
+    connectionString,
+    ssl: allowInsecure ? { rejectUnauthorized: false } : undefined,
+  });
+  await client.connect();
+  try {
+    const res = await client.query(
+      `SELECT schema_name FROM information_schema.schemata ORDER BY schema_name`
+    );
+    return res.rows.map((r) => r.schema_name);
   } finally {
     await client.end();
   }

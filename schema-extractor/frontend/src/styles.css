@@ -135,7 +135,7 @@ button {
 
 button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(79, 176, 255, 0.35);
+  box-shadow: 0 6px 14px rgba(79, 176, 255, 0.22);
 }
 
 button:disabled {
@@ -363,6 +363,8 @@ button.ghost {
   border-radius: 10px;
   background: #1a1f2b;
   width: 100%;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .list-row .left {
@@ -375,6 +377,7 @@ button.ghost {
   display: flex;
   gap: 6px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .list.nested .list-row {
@@ -414,6 +417,24 @@ button.ghost {
   margin-left: 4px;
 }
 
+.indexes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.indexes-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 10px;
+}
+
+.nested.compact {
+  padding-left: 4px;
+  gap: 6px;
+}
+
 .group-header button.small {
   padding: 6px 10px;
   font-size: 12px;
@@ -427,6 +448,7 @@ button.ghost {
 
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  word-break: break-word;
 }
 
 .muted {
@@ -448,20 +470,41 @@ button.ghost {
   margin-bottom: 10px;
 }
 
-.upload input[type="file"] {
+.file-input {
+  display: none;
+}
+
+.file-label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
   border: 1px solid var(--border);
-  padding: 8px;
+  padding: 8px 10px;
   border-radius: 10px;
   background: var(--surface);
   color: var(--ink);
+  min-width: 240px;
 }
-.upload input[type="file"]::file-selector-button {
+
+.file-button {
   background: linear-gradient(135deg, var(--accent), #357bff);
   color: #0a0c10;
   border: none;
   padding: 8px 12px;
   border-radius: 8px;
   cursor: pointer;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.file-name {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .json {

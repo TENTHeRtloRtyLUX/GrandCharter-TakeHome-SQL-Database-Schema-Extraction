@@ -1,5 +1,5 @@
-﻿export type ExtractResponse = {
-  snapshotId: string;
+export type ExtractResponse = {
+  snapshotId: string | null;
   schema: unknown;
 };
 
@@ -11,6 +11,7 @@ export async function extractSchema(payload: {
   includeSchemas?: string[];
   excludeTables?: string[];
   allowInsecureSSL?: boolean;
+  saveSnapshot?: boolean;
 }): Promise<ExtractResponse> {
   const res = await fetch(`${API_URL}/extract`, {
     method: "POST",
@@ -25,7 +26,7 @@ export async function extractSchema(payload: {
 }
 
 export async function importInterfaces(payload: {
-  snapshotId: string;
+  snapshotId: string | null;
   interfaces: unknown[];
 }): Promise<unknown> {
   const res = await fetch(`${API_URL}/interfaces/import`, {
@@ -64,6 +65,16 @@ export async function listSnapshots(): Promise<{
   return res.json();
 }
 
+export async function saveSnapshot(schema: unknown): Promise<{ snapshotId: string }> {
+  const res = await fetch(`${API_URL}/snapshots/save`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ schema }),
+  });
+  if (!res.ok) throw new Error("Failed to save snapshot");
+  return res.json();
+}
+
 export async function loadSnapshot(id: string): Promise<unknown> {
   const res = await fetch(`${API_URL}/snapshots/${id}`);
   if (!res.ok) throw new Error("Snapshot not found");
@@ -96,6 +107,22 @@ export async function textToSql(payload: {
   const data = await res.json();
   if (!res.ok) {
     throw new Error(data?.error || "Text-to-SQL failed");
+  }
+  return data;
+}
+
+export async function listDatabases(payload: {
+  connectionString: string;
+  allowInsecureSSL?: boolean;
+}): Promise<{ databases: string[] }> {
+  const res = await fetch(`${API_URL}/databases`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error || "Failed to list databases");
   }
   return data;
 }

@@ -30,6 +30,7 @@ const ExtractSchema = z.object({
   includeSchemas: z.array(z.string()).optional(),
   excludeTables: z.array(z.string()).optional(),
   allowInsecureSSL: z.boolean().optional(),
+  saveSnapshot: z.boolean().optional(),
 });
 
 const InterfacesImportSchema = z.object({
@@ -57,10 +58,19 @@ const InterfacesImportSchema = z.object({
   ),
 });
 
+const SaveSnapshotSchema = z.object({
+  schema: z.any(),
+});
+
 const TextToSqlSchema = z.object({
   connectionString: z.string().min(1),
   sql: z.string().min(1),
   limit: z.number().min(1).max(1000).optional(),
+  allowInsecureSSL: z.boolean().optional(),
+});
+
+const ListDatabasesSchema = z.object({
+  connectionString: z.string().min(1),
   allowInsecureSSL: z.boolean().optional(),
 });
 
@@ -94,6 +104,45 @@ loadSnapshots();
 
 app.get("/health", async () => ({ ok: true }));
 
+app.post("/databases", async (req, reply) => {
+  const body = ListDatabasesSchema.parse(req.body);
+  if (body.connectionString.startsWith("mysql://")) {
+    return reply.code(400).send({ error: "Use /extract directly for MySQL/MariaDB." });
+  }
+  const allowInsecure =
+    body.allowInsecureSSL || process.env.ALLOW_INSECURE_SSL === "true";
+  const connectionString = (() => {
+    if (!allowInsecure) return body.connectionString;
+    try {
+      const url = new URL(body.connectionString);
+      url.searchParams.delete("sslmode");
+      url.searchParams.delete("sslrootcert");
+      url.searchParams.delete("sslcert");
+      url.searchParams.delete("sslkey");
+      return url.toString();
+    } catch {
+      return body.connectionString;
+    }
+  })();
+  const client = new Client({
+    connectionString,
+    ssl: allowInsecure ? { rejectUnauthorized: false } : undefined,
+  });
+  await client.connect();
+  try {
+    const res = await client.query(
+      `SELECT datname
+       FROM pg_database
+       WHERE datistemplate = false
+         AND has_database_privilege(datname, 'CONNECT')
+       ORDER BY datname`
+    );
+    return reply.send({ databases: res.rows.map((r) => r.datname) });
+  } finally {
+    await client.end();
+  }
+});
+
 app.post("/extract", async (req, reply) => {
   const body = ExtractSchema.parse(req.body);
   app.log.info(
@@ -106,9 +155,12 @@ app.post("/extract", async (req, reply) => {
   const isMysql = body.connectionString.startsWith("mysql://");
   const schema = isMysql ? await extractMysql(body) : await extractSchema(body);
   const snapshotId = crypto.randomUUID();
-  snapshots.set(snapshotId, schema);
-  persistSnapshots();
-  return reply.send({ snapshotId, schema });
+  const shouldSave = (req.body as any)?.saveSnapshot === true;
+  if (shouldSave) {
+    snapshots.set(snapshotId, schema);
+    persistSnapshots();
+  }
+  return reply.send({ snapshotId: shouldSave ? snapshotId : null, schema });
 });
 
 app.get("/snapshots/:id", async (req, reply) => {
@@ -131,6 +183,14 @@ app.get("/snapshots", async (_req, reply) => {
     },
   }));
   return reply.send({ snapshots: list });
+});
+
+app.post("/snapshots/save", async (req, reply) => {
+  const body = SaveSnapshotSchema.parse(req.body);
+  const snapshotId = crypto.randomUUID();
+  snapshots.set(snapshotId, body.schema as SchemaExport);
+  persistSnapshots();
+  return reply.send({ snapshotId });
 });
 
 app.delete("/snapshots/:id", async (req, reply) => {
