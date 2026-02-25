@@ -146,7 +146,3 @@ Key UI features:
 - **Snapshots**: Persisted to disk; can be listed, loaded, deleted, and diffed.
 - **SSL handling**: Supports `allowInsecureSSL` for self-signed chains; can be upgraded to CA bundle verification.
 
-## AI Tooling
-
-- AI assistance: Used to scaffold architecture, code, and UI, then iterated based on runtime errors and feedback.
-- Manual verification: Each feature was validated locally and adjusted for SSL, schema visibility, and parsing issues.
